@@ -43,6 +43,11 @@ export default function Auth({ onAuthSuccess, apiUrl }) {
   return (
     <div className="auth-page fade-in">
       <div className="auth-card">
+        <img 
+          src="/EISTATECH_BG.png" 
+          alt="EISTATECH Logo" 
+          style={{ height: '52px', objectFit: 'contain', margin: '0 auto 1.25rem', display: 'block', borderRadius: '6px' }} 
+        />
         <div className="auth-header">
           <h2 className="auth-title">{isLogin ? 'Welcome Back' : 'Get Started'}</h2>
           <p className="auth-subtitle">
