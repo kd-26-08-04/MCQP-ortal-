@@ -43,6 +43,12 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ message: 'All fields are required' });
     }
 
+    // Restrict student registration with reserved admin email
+    const adminEmail = process.env.ADMIN_USERNAME || 'admin@2026';
+    if (email.toLowerCase() === adminEmail.toLowerCase()) {
+      return res.status(400).json({ message: 'This email is reserved for system administration.' });
+    }
+
     // Check if user already exists
     const userExists = await User.findOne({ $or: [{ email }, { username }] });
     if (userExists) {
@@ -92,6 +98,41 @@ app.post('/api/auth/login', async (req, res) => {
 
     if (!email || !password) {
       return res.status(400).json({ message: 'All fields are required' });
+    }
+
+    // Check if credentials match fixed admin details in .env
+    const adminEmail = process.env.ADMIN_USERNAME || 'admin@2026';
+    const adminPassword = process.env.ADMIN_PASSWORD || '1234567890';
+
+    if (email === adminEmail && password === adminPassword) {
+      let adminUser = await User.findOne({ email: adminEmail });
+      if (!adminUser) {
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(adminPassword, salt);
+        adminUser = new User({
+          username: 'admin',
+          email: adminEmail,
+          password: hashedPassword,
+          role: 'admin'
+        });
+        await adminUser.save();
+      }
+
+      const token = jwt.sign(
+        { id: adminUser._id, username: adminUser.username, role: adminUser.role, email: adminUser.email },
+        JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+
+      return res.json({
+        token,
+        user: {
+          id: adminUser._id,
+          username: adminUser.username,
+          email: adminUser.email,
+          role: adminUser.role
+        }
+      });
     }
 
     // Find User

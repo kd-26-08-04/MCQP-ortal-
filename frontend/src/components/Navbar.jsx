@@ -5,12 +5,12 @@ export default function Navbar({ user, onViewChange, currentView, onLogout }) {
   return (
     <nav className="navbar">
       <div className="nav-brand" onClick={() => onViewChange(user ? (user.role === 'admin' ? 'admin' : 'courses') : 'auth')}>
-        <img 
-          src="/EISTATECH_BG.png" 
-          alt="EISTATECH Logo" 
-          style={{ height: '36px', objectFit: 'contain', display: 'block', borderRadius: '4px' }} 
+        <img
+          src="/EISTATECH_BG.png"
+          alt="EISTATECH Logo"
+          style={{ height: '56px', objectFit: 'contain', display: 'block', borderRadius: '6px' }}
         />
-        <span style={{ fontSize: '1.25rem', fontWeight: 800 }}>Eistatech MCQ Portal</span>
+        <span style={{ fontSize: '1.25rem', fontWeight: 800 }}>EISTATECH MCQ Portal</span>
       </div>
 
       {user && (
