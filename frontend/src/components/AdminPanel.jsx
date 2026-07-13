@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Users, BookOpen, Download, Award } from 'lucide-react';
-import { getApiUrl } from '../api';
+import { apiFetch, getApiUrl } from '../api';
+import { LOCAL_DEMO_ENABLED, isLocalDemoToken } from '../localDemo';
 
 export default function AdminPanel({ token }) {
   const [stats, setStats] = useState(null);
@@ -11,22 +12,15 @@ export default function AdminPanel({ token }) {
   useEffect(() => {
     let cancelled = false;
 
-    fetch(`${getApiUrl()}/api/admin/stats`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.message || 'Failed to load admin statistics');
-        return data;
-      })
-      .then((data) => {
+    apiFetch('/api/admin/stats', { token })
+      .then(({ data }) => {
         if (cancelled) return;
         setStats(data);
         setLoading(false);
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(err.message);
+        setError(err.message || 'Failed to load admin statistics');
         setLoading(false);
       });
 
@@ -36,7 +30,13 @@ export default function AdminPanel({ token }) {
   }, [token]);
 
   const handleDownloadPdf = async (studentId, username) => {
+    if (LOCAL_DEMO_ENABLED && isLocalDemoToken(token)) {
+      setError('PDF export needs the live backend. Local demo mode cannot generate PDFs.');
+      return;
+    }
+
     setDownloadingId(studentId);
+    setError('');
     try {
       const response = await fetch(`${getApiUrl()}/api/admin/reports/${studentId}/pdf`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -57,7 +57,10 @@ export default function AdminPanel({ token }) {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      setError(err.message);
+      const message = err.message === 'Failed to fetch'
+        ? 'Could not reach the API. Check that the backend is online and CORS allows this site.'
+        : err.message;
+      setError(message);
     } finally {
       setDownloadingId(null);
     }
@@ -110,7 +113,9 @@ export default function AdminPanel({ token }) {
       <div className="admin-table-container">
         <div className="table-header-block">
           <h2 className="table-title">Performance track</h2>
-          <span className="table-meta">Live from database</span>
+          <span className="table-meta">
+            {LOCAL_DEMO_ENABLED && isLocalDemoToken(token) ? 'Local demo data' : 'Live from database'}
+          </span>
         </div>
 
         {stats.students.length === 0 ? (
@@ -138,7 +143,7 @@ export default function AdminPanel({ token }) {
                       <div className="progress-pill-container" aria-label={`${student.username} level status`}>
                         {Array.from({ length: 10 }, (_, i) => {
                           const levelNum = i + 1;
-                          const levelProg = student.progress.find((p) => p.level === levelNum);
+                          const levelProg = (student.progress || []).find((p) => p.level === levelNum);
 
                           let statusClass = 'locked';
                           if (levelProg) {

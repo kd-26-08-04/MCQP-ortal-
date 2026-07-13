@@ -24,7 +24,7 @@ const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/mcq_te
 const isProduction = process.env.NODE_ENV === 'production';
 const BCRYPT_ROUNDS = 12;
 
-const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
+const allowedOrigins = (process.env.FRONTEND_URL || '')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
@@ -35,10 +35,21 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' }
 }));
 
+function isAllowedOrigin(origin) {
+  if (!origin) return true;
+  if (allowedOrigins.includes(origin)) return true;
+  // Local Vite / preview
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
+  // Vercel preview + production deployments
+  if (/^https:\/\/[\w.-]+\.vercel\.app$/.test(origin)) return true;
+  // If no FRONTEND_URL configured, keep previous open-CORS behavior so live sites do not break
+  if (allowedOrigins.length === 0) return true;
+  return false;
+}
+
 app.use(cors({
   origin(origin, callback) {
-    // Allow non-browser clients (no Origin) and configured frontends
-    if (!origin || allowedOrigins.includes(origin) || !isProduction) {
+    if (isAllowedOrigin(origin)) {
       return callback(null, true);
     }
     return callback(new Error('Not allowed by CORS'));

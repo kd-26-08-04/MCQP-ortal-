@@ -346,6 +346,33 @@ a {
   color: hsl(var(--muted));
 }
 
+.local-demo-hint {
+  margin-top: 1.25rem;
+  padding: 0.85rem 1rem;
+  text-align: left;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: hsl(var(--muted));
+  background: hsl(var(--surface-muted));
+  border: 1px dashed hsl(var(--border));
+  border-radius: var(--radius-md);
+}
+
+.local-demo-hint strong {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: hsl(var(--ink));
+  font-size: 0.8rem;
+}
+
+.local-demo-hint code {
+  font-size: 0.75rem;
+  background: white;
+  border: 1px solid hsl(var(--border));
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+}
+
 .text-link {
   background: none;
   border: none;

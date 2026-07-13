@@ -6,6 +6,11 @@ import DsaDashboard from './components/DsaDashboard';
 import TestWindow from './components/TestWindow';
 import AdminPanel from './components/AdminPanel';
 import { apiFetch, getApiUrl } from './api';
+import {
+  LOCAL_DEMO_ENABLED,
+  getLocalDemoUserFromToken,
+  isLocalDemoToken
+} from './localDemo';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -32,14 +37,43 @@ export default function App() {
       }
 
       try {
-        JSON.parse(storedUser);
-        const { data } = await apiFetch('/api/auth/me', { token: storedToken });
-        if (cancelled) return;
+        // TEMPORARY local demo restore — no API / DB
+        if (LOCAL_DEMO_ENABLED && isLocalDemoToken(storedToken)) {
+          const demoUser = getLocalDemoUserFromToken(storedToken);
+          if (!demoUser) throw new Error('Invalid demo session');
+          if (cancelled) return;
+          setUser(demoUser);
+          setToken(storedToken);
+          localStorage.setItem('user', JSON.stringify(demoUser));
+          setCurrentView(demoUser.role === 'admin' ? 'admin' : 'courses');
+          return;
+        }
 
-        setUser(data.user);
-        setToken(storedToken);
-        localStorage.setItem('user', JSON.stringify(data.user));
-        setCurrentView(data.user.role === 'admin' ? 'admin' : 'courses');
+        let parsedUser;
+        try {
+          parsedUser = JSON.parse(storedUser);
+        } catch {
+          throw new Error('Corrupt session');
+        }
+
+        try {
+          const { data } = await apiFetch('/api/auth/me', { token: storedToken });
+          if (cancelled) return;
+          setUser(data.user);
+          setToken(storedToken);
+          localStorage.setItem('user', JSON.stringify(data.user));
+          setCurrentView(data.user.role === 'admin' ? 'admin' : 'courses');
+        } catch (err) {
+          // Backward compatible with backends that do not yet expose /api/auth/me
+          if (err.status === 404 || err.status === 0) {
+            if (cancelled) return;
+            setUser(parsedUser);
+            setToken(storedToken);
+            setCurrentView(parsedUser.role === 'admin' ? 'admin' : 'courses');
+            return;
+          }
+          throw err;
+        }
       } catch {
         localStorage.removeItem('user');
         localStorage.removeItem('token');

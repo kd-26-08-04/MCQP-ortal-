@@ -56,6 +56,19 @@ VITE_API_URL=http://localhost:5000
 
 ---
 
+## Local demo login (temporary — no DB)
+
+On `localhost` only, you can sign in without MongoDB or the backend:
+
+| Role | Email | Password |
+|---|---|---|
+| Student | `student@local.dev` | `student123` |
+| Admin | `admin@local.dev` | `admin123` |
+
+Remove `frontend/src/localDemo.js` (and its usages) when you are done testing.
+
+---
+
 ## Deploy
 
 ### Backend (Render)
