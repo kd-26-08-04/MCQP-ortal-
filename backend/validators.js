@@ -4,6 +4,10 @@ function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
 }
 
+function isValidEmail(email) {
+  return EMAIL_RE.test(normalizeEmail(email));
+}
+
 function validateRegisterInput({ username, email, password }) {
   const errors = [];
   const cleanUsername = String(username || '').trim();
@@ -16,7 +20,7 @@ function validateRegisterInput({ username, email, password }) {
   if (!/^[a-zA-Z0-9._-]+$/.test(cleanUsername)) {
     errors.push('Username may only contain letters, numbers, dots, underscores, and hyphens.');
   }
-  if (!EMAIL_RE.test(cleanEmail)) {
+  if (!isValidEmail(cleanEmail)) {
     errors.push('A valid email address is required.');
   }
   if (cleanPassword.length < 8 || cleanPassword.length > 128) {
@@ -34,14 +38,22 @@ function validateRegisterInput({ username, email, password }) {
   };
 }
 
-function validateLoginInput({ email, password }) {
+/**
+ * Login accepts a normal email OR an admin bootstrap identifier
+ * (e.g. admin@2026) that matches ADMIN_USERNAME exactly after normalize.
+ */
+function validateLoginInput({ email, password }, adminUsername = '') {
   const errors = [];
   const cleanEmail = normalizeEmail(email);
   const cleanPassword = String(password || '');
+  const normalizedAdmin = normalizeEmail(adminUsername);
 
-  if (!EMAIL_RE.test(cleanEmail)) {
+  if (!cleanEmail) {
+    errors.push('Email or admin ID is required.');
+  } else if (!isValidEmail(cleanEmail) && cleanEmail !== normalizedAdmin) {
     errors.push('A valid email address is required.');
   }
+
   if (!cleanPassword) {
     errors.push('Password is required.');
   }
@@ -79,10 +91,55 @@ function normalizeAnswers(answers) {
   return normalized;
 }
 
+function validateQuestionPayload(body) {
+  const errors = [];
+  const level = Number.parseInt(body?.level, 10);
+  const questionText = String(body?.questionText || '').trim();
+  const options = Array.isArray(body?.options) ? body.options.map((o) => String(o || '').trim()) : [];
+  const correctOptionIndex = Number.parseInt(body?.correctOptionIndex, 10);
+
+  if (!Number.isInteger(level) || level < 1 || level > 10) {
+    errors.push('Level must be between 1 and 10.');
+  }
+  if (!questionText || questionText.length > 2000) {
+    errors.push('Question text is required (max 2000 characters).');
+  }
+  if (options.length !== 4 || options.some((o) => !o)) {
+    errors.push('Exactly 4 non-empty options are required.');
+  }
+  if (!Number.isInteger(correctOptionIndex) || correctOptionIndex < 0 || correctOptionIndex > 3) {
+    errors.push('correctOptionIndex must be 0–3.');
+  }
+
+  return {
+    ok: errors.length === 0,
+    errors,
+    value: {
+      course: 'Computer Science',
+      subject: 'DSA',
+      level,
+      questionText,
+      options,
+      correctOptionIndex
+    }
+  };
+}
+
+/** Canonical storage email when ADMIN_USERNAME is not a real email (e.g. admin@2026). */
+function resolveAdminStorageEmail(adminUsername) {
+  const normalized = normalizeEmail(adminUsername);
+  if (isValidEmail(normalized)) return normalized;
+  return 'admin@eistatech.local';
+}
+
 module.exports = {
   validateRegisterInput,
   validateLoginInput,
   parseLevelId,
   normalizeAnswers,
-  normalizeEmail
+  normalizeEmail,
+  isValidEmail,
+  validateQuestionPayload,
+  resolveAdminStorageEmail,
+  EMAIL_RE
 };

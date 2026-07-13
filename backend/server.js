@@ -15,7 +15,10 @@ const {
   validateLoginInput,
   parseLevelId,
   normalizeAnswers,
-  normalizeEmail
+  normalizeEmail,
+  isValidEmail,
+  validateQuestionPayload,
+  resolveAdminStorageEmail
 } = require('./validators');
 
 const app = express();
@@ -54,7 +57,7 @@ app.use(cors({
     }
     return callback(new Error('Not allowed by CORS'));
   },
-  methods: ['GET', 'POST', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
@@ -126,13 +129,17 @@ async function ensureDsaProgress(userId) {
   return Progress.find({ user: userId, subject: 'DSA' }).sort({ level: 1 });
 }
 
-async function ensureAdminUser(adminEmail, adminPassword) {
-  let adminUser = await User.findOne({ email: adminEmail });
+async function ensureAdminUser(adminLoginId, adminPassword) {
+  const storageEmail = resolveAdminStorageEmail(adminLoginId);
+  let adminUser = await User.findOne({
+    $or: [{ email: storageEmail }, { email: normalizeEmail(adminLoginId) }]
+  });
+
   if (!adminUser) {
     const hashedPassword = await bcrypt.hash(adminPassword, BCRYPT_ROUNDS);
     adminUser = await User.create({
       username: 'admin',
-      email: adminEmail,
+      email: storageEmail,
       password: hashedPassword,
       role: 'admin'
     });
@@ -157,9 +164,13 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     }
 
     const { username, email, password } = validation.value;
-    const adminEmail = normalizeEmail(process.env.ADMIN_USERNAME || 'admin@eistatech.local');
+    const adminLoginId = normalizeEmail(process.env.ADMIN_USERNAME || '');
+    const reservedEmails = new Set(
+      [adminLoginId, resolveAdminStorageEmail(adminLoginId || 'admin@eistatech.local')]
+        .filter(Boolean)
+    );
 
-    if (email === adminEmail) {
+    if (reservedEmails.has(email)) {
       return res.status(400).json({ message: 'This email is reserved for system administration.' });
     }
 
@@ -190,20 +201,25 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
 
 app.post('/api/auth/login', authLimiter, async (req, res) => {
   try {
-    const validation = validateLoginInput(req.body);
+    const adminLoginId = normalizeEmail(process.env.ADMIN_USERNAME || '');
+    const adminPassword = process.env.ADMIN_PASSWORD || '';
+
+    const validation = validateLoginInput(req.body, adminLoginId);
     if (!validation.ok) {
       return res.status(400).json({ message: validation.errors[0], errors: validation.errors });
     }
 
     const { email, password } = validation.value;
-    const adminEmail = normalizeEmail(process.env.ADMIN_USERNAME || '');
-    const adminPassword = process.env.ADMIN_PASSWORD || '';
 
-    // Env-based admin bootstrap (only when both vars are configured)
-    if (adminEmail && adminPassword && email === adminEmail && password === adminPassword) {
-      const adminUser = await ensureAdminUser(adminEmail, adminPassword);
+    // Env-based admin bootstrap (supports non-standard IDs like admin@2026)
+    if (adminLoginId && adminPassword && email === adminLoginId && password === adminPassword) {
+      const adminUser = await ensureAdminUser(adminLoginId, adminPassword);
       const token = signToken(adminUser);
       return res.json({ token, user: publicUser(adminUser) });
+    }
+
+    if (!isValidEmail(email)) {
+      return res.status(401).json({ message: 'Invalid credentials' });
     }
 
     const user = await User.findOne({ email });
@@ -330,11 +346,21 @@ app.post('/api/levels/dsa/:levelId/submit', authenticateToken, async (req, res) 
     }
 
     let correctCount = 0;
+    const details = [];
+
     for (const q of questions) {
       const studentAnswer = answers[q._id.toString()];
-      if (studentAnswer !== undefined && studentAnswer === q.correctOptionIndex) {
-        correctCount += 1;
-      }
+      const isCorrect = studentAnswer !== undefined && studentAnswer === q.correctOptionIndex;
+      if (isCorrect) correctCount += 1;
+
+      details.push({
+        questionId: q._id,
+        questionText: q.questionText,
+        options: q.options,
+        studentAnswer: studentAnswer === undefined ? null : studentAnswer,
+        correctAnswer: q.correctOptionIndex,
+        isCorrect
+      });
     }
 
     const passed = hasPassed(correctCount, questions.length);
@@ -373,13 +399,14 @@ app.post('/api/levels/dsa/:levelId/submit', authenticateToken, async (req, res) 
       }
     }
 
-    // Do not leak answer keys — frontend only needs summary metrics
+    // Answer keys only returned after submit for learning review
     res.json({
       score: correctCount,
       totalQuestions: questions.length,
       passed,
       nextLevelUnlocked,
-      bestScore: progress.score
+      bestScore: progress.score,
+      details
     });
   } catch (error) {
     console.error('Error submitting test:', error);
@@ -450,6 +477,131 @@ app.get('/api/admin/reports/:userId/pdf', authenticateToken, requireAdmin, async
     if (!res.headersSent) {
       res.status(500).json({ message: 'Server error generating PDF report' });
     }
+  }
+});
+
+// Admin question bank
+app.get('/api/admin/questions', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const level = req.query.level ? parseLevelId(req.query.level) : null;
+    if (req.query.level && level === null) {
+      return res.status(400).json({ message: 'Invalid level parameter' });
+    }
+
+    const filter = { subject: 'DSA' };
+    if (level !== null) filter.level = level;
+
+    const questions = await Question.find(filter).sort({ level: 1, _id: 1 });
+    res.json({ questions, total: questions.length });
+  } catch (error) {
+    console.error('Error listing questions:', error);
+    res.status(500).json({ message: 'Server error listing questions' });
+  }
+});
+
+app.post('/api/admin/questions', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const validation = validateQuestionPayload(req.body);
+    if (!validation.ok) {
+      return res.status(400).json({ message: validation.errors[0], errors: validation.errors });
+    }
+
+    const question = await Question.create(validation.value);
+    res.status(201).json({ question });
+  } catch (error) {
+    console.error('Error creating question:', error);
+    res.status(500).json({ message: 'Server error creating question' });
+  }
+});
+
+app.put('/api/admin/questions/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid question id.' });
+    }
+
+    const validation = validateQuestionPayload(req.body);
+    if (!validation.ok) {
+      return res.status(400).json({ message: validation.errors[0], errors: validation.errors });
+    }
+
+    const question = await Question.findByIdAndUpdate(
+      req.params.id,
+      { $set: validation.value },
+      { new: true, runValidators: true }
+    );
+
+    if (!question) {
+      return res.status(404).json({ message: 'Question not found.' });
+    }
+
+    res.json({ question });
+  } catch (error) {
+    console.error('Error updating question:', error);
+    res.status(500).json({ message: 'Server error updating question' });
+  }
+});
+
+app.delete('/api/admin/questions/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid question id.' });
+    }
+
+    const deleted = await Question.findByIdAndDelete(req.params.id);
+    if (!deleted) {
+      return res.status(404).json({ message: 'Question not found.' });
+    }
+
+    res.json({ message: 'Question deleted.' });
+  } catch (error) {
+    console.error('Error deleting question:', error);
+    res.status(500).json({ message: 'Server error deleting question' });
+  }
+});
+
+// Reset student DSA progress (all levels or one level)
+app.post('/api/admin/students/:userId/reset-progress', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: 'Invalid student id.' });
+    }
+
+    const student = await User.findById(userId);
+    if (!student || student.role !== 'student') {
+      return res.status(404).json({ message: 'Student not found.' });
+    }
+
+    const level = req.body?.level != null ? parseLevelId(req.body.level) : null;
+    if (req.body?.level != null && level === null) {
+      return res.status(400).json({ message: 'Invalid level parameter' });
+    }
+
+    if (level !== null) {
+      await Progress.findOneAndUpdate(
+        { user: userId, subject: 'DSA', level },
+        {
+          $set: {
+            score: 0,
+            totalQuestions: 10,
+            status: level === 1 ? 'unlocked' : 'locked',
+            updatedAt: new Date()
+          }
+        },
+        { upsert: true }
+      );
+
+      // If resetting a mid level, re-lock later completed levels only when full reset — single level keeps others
+      return res.json({ message: `Level ${level} progress reset.`, level });
+    }
+
+    await Progress.deleteMany({ user: userId, subject: 'DSA' });
+    await ensureDsaProgress(userId);
+    res.json({ message: 'All DSA progress reset for student.' });
+  } catch (error) {
+    console.error('Error resetting progress:', error);
+    res.status(500).json({ message: 'Server error resetting progress' });
   }
 });
 

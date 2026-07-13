@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { LogIn, UserPlus } from 'lucide-react';
 import { apiFetch } from '../api';
-import { LOCAL_DEMO_ENABLED, LOCAL_DEMO_ACCOUNTS, tryLocalDemoLogin } from '../localDemo';
 
 export default function Auth({ onAuthSuccess }) {
   const [isLogin, setIsLogin] = useState(true);
@@ -16,21 +15,12 @@ export default function Auth({ onAuthSuccess }) {
     setError('');
     setLoading(true);
 
+    const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
+    const payload = isLogin
+      ? { email, password }
+      : { username, email, password };
+
     try {
-      // TEMPORARY local demo — no backend / DB required
-      if (isLogin) {
-        const demo = tryLocalDemoLogin(email, password);
-        if (demo) {
-          onAuthSuccess(demo.user, demo.token);
-          return;
-        }
-      }
-
-      const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
-      const payload = isLogin
-        ? { email, password }
-        : { username, email, password };
-
       const { data } = await apiFetch(endpoint, {
         method: 'POST',
         body: JSON.stringify(payload)
@@ -59,7 +49,7 @@ export default function Auth({ onAuthSuccess }) {
           <h1 className="auth-title">{isLogin ? 'Welcome back' : 'Create your account'}</h1>
           <p className="auth-subtitle">
             {isLogin
-              ? 'Sign in to continue your assessment path.'
+              ? 'Sign in with your email (or admin ID) to continue.'
               : 'Register as a student to start DSA level tests.'}
           </p>
         </div>
@@ -90,12 +80,15 @@ export default function Auth({ onAuthSuccess }) {
           )}
 
           <div className="form-group">
-            <label className="form-label" htmlFor="auth-email">Email</label>
+            <label className="form-label" htmlFor="auth-email">
+              {isLogin ? 'Email or admin ID' : 'Email'}
+            </label>
             <input
               id="auth-email"
-              type="email"
+              type="text"
+              inputMode="email"
               className="form-input"
-              placeholder="name@example.com"
+              placeholder={isLogin ? 'name@example.com or admin ID' : 'name@example.com'}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
@@ -141,17 +134,6 @@ export default function Auth({ onAuthSuccess }) {
             </>
           )}
         </div>
-
-        {LOCAL_DEMO_ENABLED && isLogin && (
-          <div className="local-demo-hint" role="note">
-            <strong>Local demo (no DB)</strong>
-            {LOCAL_DEMO_ACCOUNTS.map((account) => (
-              <div key={account.email}>
-                {account.user.role}: <code>{account.email}</code> / <code>{account.password}</code>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   );

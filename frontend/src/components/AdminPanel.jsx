@@ -1,40 +1,94 @@
-import React, { useState, useEffect } from 'react';
-import { Users, BookOpen, Download, Award } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Users, BookOpen, Download, Award, RotateCcw, Plus, Trash2, Pencil, Search } from 'lucide-react';
 import { apiFetch, getApiUrl } from '../api';
-import { LOCAL_DEMO_ENABLED, isLocalDemoToken } from '../localDemo';
+
+const EMPTY_FORM = {
+  level: 1,
+  questionText: '',
+  options: ['', '', '', ''],
+  correctOptionIndex: 0
+};
 
 export default function AdminPanel({ token }) {
+  const [tab, setTab] = useState('students');
   const [stats, setStats] = useState(null);
+  const [questions, setQuestions] = useState([]);
+  const [filterLevel, setFilterLevel] = useState('all');
+  const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
   const [downloadingId, setDownloadingId] = useState(null);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [editingId, setEditingId] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const loadStats = async () => {
+    const { data } = await apiFetch('/api/admin/stats', { token });
+    setStats(data);
+  };
+
+  const loadQuestions = async (level = filterLevel) => {
+    const query = level === 'all' ? '' : `?level=${level}`;
+    const { data } = await apiFetch(`/api/admin/questions${query}`, { token });
+    setQuestions(data.questions || []);
+  };
 
   useEffect(() => {
     let cancelled = false;
 
-    apiFetch('/api/admin/stats', { token })
-      .then(({ data }) => {
-        if (cancelled) return;
-        setStats(data);
-        setLoading(false);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setError(err.message || 'Failed to load admin statistics');
-        setLoading(false);
-      });
+    async function boot() {
+      try {
+        const { data } = await apiFetch('/api/admin/stats', { token });
+        if (!cancelled) {
+          setStats(data);
+          setLoading(false);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err.message || 'Failed to load admin statistics');
+          setLoading(false);
+        }
+      }
+    }
 
+    boot();
     return () => {
       cancelled = true;
     };
   }, [token]);
 
-  const handleDownloadPdf = async (studentId, username) => {
-    if (LOCAL_DEMO_ENABLED && isLocalDemoToken(token)) {
-      setError('PDF export needs the live backend. Local demo mode cannot generate PDFs.');
-      return;
-    }
+  useEffect(() => {
+    if (tab !== 'questions') return;
+    let cancelled = false;
+    setError('');
 
+    const query = filterLevel === 'all' ? '' : `?level=${filterLevel}`;
+    apiFetch(`/api/admin/questions${query}`, { token })
+      .then(({ data }) => {
+        if (!cancelled) setQuestions(data.questions || []);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, filterLevel, token]);
+
+  const filteredStudents = useMemo(() => {
+    if (!stats?.students) return [];
+    const q = search.trim().toLowerCase();
+    if (!q) return stats.students;
+    return stats.students.filter(
+      (s) =>
+        s.username?.toLowerCase().includes(q) ||
+        s.email?.toLowerCase().includes(q)
+    );
+  }, [stats, search]);
+
+  const handleDownloadPdf = async (studentId, username) => {
     setDownloadingId(studentId);
     setError('');
     try {
@@ -57,12 +111,88 @@ export default function AdminPanel({ token }) {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      const message = err.message === 'Failed to fetch'
+      const msg = err.message === 'Failed to fetch'
         ? 'Could not reach the API. Check that the backend is online and CORS allows this site.'
         : err.message;
-      setError(message);
+      setError(msg);
     } finally {
       setDownloadingId(null);
+    }
+  };
+
+  const handleResetProgress = async (studentId, username) => {
+    const ok = window.confirm(`Reset ALL DSA progress for ${username}? This cannot be undone.`);
+    if (!ok) return;
+    setError('');
+    setMessage('');
+    try {
+      await apiFetch(`/api/admin/students/${studentId}/reset-progress`, {
+        method: 'POST',
+        token,
+        body: JSON.stringify({})
+      });
+      setMessage(`Progress reset for ${username}.`);
+      await loadStats();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const startEdit = (question) => {
+    setEditingId(question._id);
+    setForm({
+      level: question.level,
+      questionText: question.questionText,
+      options: [...question.options],
+      correctOptionIndex: question.correctOptionIndex
+    });
+  };
+
+  const resetForm = () => {
+    setEditingId(null);
+    setForm(EMPTY_FORM);
+  };
+
+  const handleSaveQuestion = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setError('');
+    setMessage('');
+    try {
+      if (editingId) {
+        await apiFetch(`/api/admin/questions/${editingId}`, {
+          method: 'PUT',
+          token,
+          body: JSON.stringify(form)
+        });
+        setMessage('Question updated.');
+      } else {
+        await apiFetch('/api/admin/questions', {
+          method: 'POST',
+          token,
+          body: JSON.stringify(form)
+        });
+        setMessage('Question created.');
+      }
+      resetForm();
+      await loadQuestions();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteQuestion = async (id) => {
+    if (!window.confirm('Delete this question?')) return;
+    setError('');
+    try {
+      await apiFetch(`/api/admin/questions/${id}`, { method: 'DELETE', token });
+      setMessage('Question deleted.');
+      if (editingId === id) resetForm();
+      await loadQuestions();
+    } catch (err) {
+      setError(err.message);
     }
   };
 
@@ -78,124 +208,272 @@ export default function AdminPanel({ token }) {
     <div className="fade-in">
       <header className="welcome-header">
         <p className="eyebrow">Administration</p>
-        <h1 className="welcome-title">Student performance</h1>
+        <h1 className="welcome-title">Admin console</h1>
         <p className="welcome-subtitle">
-          Review level progress and export PDF reports.
+          Track students, manage the DSA question bank, and export reports.
         </p>
       </header>
 
-      {error && (
-        <div className="alert-message error" role="alert">{error}</div>
+      <div className="admin-tabs" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'students'}
+          className={`btn btn-ghost ${tab === 'students' ? 'is-active' : ''}`}
+          onClick={() => setTab('students')}
+        >
+          <Users size={14} aria-hidden="true" /> Students
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'questions'}
+          className={`btn btn-ghost ${tab === 'questions' ? 'is-active' : ''}`}
+          onClick={() => setTab('questions')}
+        >
+          <BookOpen size={14} aria-hidden="true" /> Questions
+        </button>
+      </div>
+
+      {error && <div className="alert-message error" role="alert">{error}</div>}
+      {message && <div className="alert-message success" role="status">{message}</div>}
+
+      {tab === 'students' && stats && (
+        <>
+          <div className="stats-row">
+            <div className="stat-card">
+              <div className="stat-icon students" aria-hidden="true">
+                <Users size={24} />
+              </div>
+              <div>
+                <div className="stat-label">Students</div>
+                <div className="stat-value">{stats.totalStudents}</div>
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-icon subjects" aria-hidden="true">
+                <BookOpen size={24} />
+              </div>
+              <div>
+                <div className="stat-label">Active subjects</div>
+                <div className="stat-value">{stats.totalSubjects}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="admin-table-container">
+            <div className="table-header-block">
+              <h2 className="table-title">Performance track</h2>
+              <div className="search-field">
+                <Search size={14} aria-hidden="true" />
+                <input
+                  type="search"
+                  className="form-input search-input"
+                  placeholder="Search name or email"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  aria-label="Search students"
+                />
+              </div>
+            </div>
+
+            {filteredStudents.length === 0 ? (
+              <div className="empty-state">No matching students.</div>
+            ) : (
+              <div className="table-scroll">
+                <table className="performance-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Student</th>
+                      <th scope="col">Stages</th>
+                      <th scope="col">Completed</th>
+                      <th scope="col">Score / 100</th>
+                      <th scope="col" className="text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredStudents.map((student) => (
+                      <tr key={student.id}>
+                        <td>
+                          <div className="student-name-cell">{student.username}</div>
+                          <div className="student-email-cell">{student.email}</div>
+                        </td>
+                        <td>
+                          <div className="progress-pill-container">
+                            {Array.from({ length: 10 }, (_, i) => {
+                              const levelNum = i + 1;
+                              const levelProg = (student.progress || []).find((p) => p.level === levelNum);
+                              let statusClass = 'locked';
+                              if (levelProg) statusClass = levelProg.status;
+                              else if (levelNum === 1) statusClass = 'unlocked';
+                              return (
+                                <div key={levelNum} className={`progress-pill ${statusClass}`} title={`Level ${levelNum}: ${statusClass}`}>
+                                  {levelNum}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </td>
+                        <td>
+                          <span className="completed-count">{student.levelsCompleted} / 10</span>
+                        </td>
+                        <td>
+                          <div className="score-cell">
+                            <Award size={14} aria-hidden="true" />
+                            {Number(student.totalMarks || 0).toFixed(1)}
+                          </div>
+                        </td>
+                        <td className="text-right action-cell">
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-compact"
+                            onClick={() => handleDownloadPdf(student.id, student.username)}
+                            disabled={downloadingId === student.id}
+                          >
+                            <Download size={14} aria-hidden="true" />
+                            {downloadingId === student.id ? '…' : 'PDF'}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-compact"
+                            onClick={() => handleResetProgress(student.id, student.username)}
+                          >
+                            <RotateCcw size={14} aria-hidden="true" />
+                            Reset
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
       )}
 
-      <div className="stats-row">
-        <div className="stat-card">
-          <div className="stat-icon students" aria-hidden="true">
-            <Users size={24} />
-          </div>
-          <div>
-            <div className="stat-label">Students</div>
-            <div className="stat-value">{stats.totalStudents}</div>
-          </div>
-        </div>
+      {tab === 'questions' && (
+        <div className="admin-questions">
+          <form className="question-form card-surface" onSubmit={handleSaveQuestion}>
+            <h2 className="table-title">{editingId ? 'Edit question' : 'Add question'}</h2>
 
-        <div className="stat-card">
-          <div className="stat-icon subjects" aria-hidden="true">
-            <BookOpen size={24} />
-          </div>
-          <div>
-            <div className="stat-label">Active subjects</div>
-            <div className="stat-value">{stats.totalSubjects}</div>
-          </div>
-        </div>
-      </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label" htmlFor="q-level">Level</label>
+                <select
+                  id="q-level"
+                  className="form-input"
+                  value={form.level}
+                  onChange={(e) => setForm((f) => ({ ...f, level: Number(e.target.value) }))}
+                >
+                  {Array.from({ length: 10 }, (_, i) => (
+                    <option key={i + 1} value={i + 1}>Level {i + 1}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="q-correct">Correct option</label>
+                <select
+                  id="q-correct"
+                  className="form-input"
+                  value={form.correctOptionIndex}
+                  onChange={(e) => setForm((f) => ({ ...f, correctOptionIndex: Number(e.target.value) }))}
+                >
+                  {[0, 1, 2, 3].map((i) => (
+                    <option key={i} value={i}>{String.fromCharCode(65 + i)}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
-      <div className="admin-table-container">
-        <div className="table-header-block">
-          <h2 className="table-title">Performance track</h2>
-          <span className="table-meta">
-            {LOCAL_DEMO_ENABLED && isLocalDemoToken(token) ? 'Local demo data' : 'Live from database'}
-          </span>
-        </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="q-text">Question</label>
+              <textarea
+                id="q-text"
+                className="form-input form-textarea"
+                rows={3}
+                value={form.questionText}
+                onChange={(e) => setForm((f) => ({ ...f, questionText: e.target.value }))}
+                required
+              />
+            </div>
 
-        {stats.students.length === 0 ? (
-          <div className="empty-state">No students registered yet.</div>
-        ) : (
-          <div className="table-scroll">
-            <table className="performance-table">
-              <thead>
-                <tr>
-                  <th scope="col">Student</th>
-                  <th scope="col">Stages</th>
-                  <th scope="col">Completed</th>
-                  <th scope="col">Score / 100</th>
-                  <th scope="col" className="text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stats.students.map((student) => (
-                  <tr key={student.id}>
-                    <td>
-                      <div className="student-name-cell">{student.username}</div>
-                      <div className="student-email-cell">{student.email}</div>
-                    </td>
-                    <td>
-                      <div className="progress-pill-container" aria-label={`${student.username} level status`}>
-                        {Array.from({ length: 10 }, (_, i) => {
-                          const levelNum = i + 1;
-                          const levelProg = (student.progress || []).find((p) => p.level === levelNum);
+            <div className="options-editor">
+              {form.options.map((opt, idx) => (
+                <div className="form-group" key={idx}>
+                  <label className="form-label" htmlFor={`opt-${idx}`}>Option {String.fromCharCode(65 + idx)}</label>
+                  <input
+                    id={`opt-${idx}`}
+                    className="form-input"
+                    value={opt}
+                    onChange={(e) => {
+                      const next = [...form.options];
+                      next[idx] = e.target.value;
+                      setForm((f) => ({ ...f, options: next }));
+                    }}
+                    required
+                  />
+                </div>
+              ))}
+            </div>
 
-                          let statusClass = 'locked';
-                          if (levelProg) {
-                            statusClass = levelProg.status;
-                          } else if (levelNum === 1) {
-                            statusClass = 'unlocked';
-                          }
+            <div className="form-actions">
+              <button type="submit" className="btn btn-primary" disabled={saving}>
+                <Plus size={14} aria-hidden="true" />
+                {saving ? 'Saving…' : editingId ? 'Update question' : 'Add question'}
+              </button>
+              {editingId && (
+                <button type="button" className="btn btn-secondary" onClick={resetForm}>
+                  Cancel edit
+                </button>
+              )}
+            </div>
+          </form>
 
-                          const title =
-                            levelProg && levelProg.status === 'completed'
-                              ? `Level ${levelNum}: completed (${levelProg.score}/${levelProg.totalQuestions || 10})`
-                              : `Level ${levelNum}: ${statusClass}`;
-
-                          return (
-                            <div
-                              key={levelNum}
-                              className={`progress-pill ${statusClass}`}
-                              title={title}
-                            >
-                              {levelNum}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </td>
-                    <td>
-                      <span className="completed-count">{student.levelsCompleted} / 10</span>
-                    </td>
-                    <td>
-                      <div className="score-cell">
-                        <Award size={14} aria-hidden="true" />
-                        {Number(student.totalMarks || 0).toFixed(1)}
-                      </div>
-                    </td>
-                    <td className="text-right">
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-compact"
-                        onClick={() => handleDownloadPdf(student.id, student.username)}
-                        disabled={downloadingId === student.id}
-                      >
-                        <Download size={14} aria-hidden="true" />
-                        {downloadingId === student.id ? 'Exporting…' : 'PDF'}
-                      </button>
-                    </td>
-                  </tr>
+          <div className="admin-table-container">
+            <div className="table-header-block">
+              <h2 className="table-title">Question bank ({questions.length})</h2>
+              <select
+                className="form-input level-filter"
+                value={filterLevel}
+                onChange={(e) => setFilterLevel(e.target.value)}
+                aria-label="Filter by level"
+              >
+                <option value="all">All levels</option>
+                {Array.from({ length: 10 }, (_, i) => (
+                  <option key={i + 1} value={String(i + 1)}>Level {i + 1}</option>
                 ))}
-              </tbody>
-            </table>
+              </select>
+            </div>
+
+            {questions.length === 0 ? (
+              <div className="empty-state">No questions for this filter. Run seed or add questions above.</div>
+            ) : (
+              <ul className="question-admin-list">
+                {questions.map((question) => (
+                  <li key={question._id} className="question-admin-item">
+                    <div>
+                      <span className="badge-status unlocked">L{question.level}</span>
+                      <p className="question-admin-text">{question.questionText}</p>
+                      <p className="student-email-cell">
+                        Correct: {String.fromCharCode(65 + question.correctOptionIndex)}. {question.options[question.correctOptionIndex]}
+                      </p>
+                    </div>
+                    <div className="action-cell">
+                      <button type="button" className="btn btn-secondary btn-compact" onClick={() => startEdit(question)}>
+                        <Pencil size={14} aria-hidden="true" /> Edit
+                      </button>
+                      <button type="button" className="btn btn-secondary btn-compact" onClick={() => handleDeleteQuestion(question._id)}>
+                        <Trash2 size={14} aria-hidden="true" /> Delete
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

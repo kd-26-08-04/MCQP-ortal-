@@ -20,6 +20,7 @@ export default function TestWindow({ levelId, onBack, onRetry, token, apiUrl }) 
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
+  const [showReview, setShowReview] = useState(false);
 
   const timerRef = useRef(null);
   const answersRef = useRef({});
@@ -67,6 +68,7 @@ export default function TestWindow({ levelId, onBack, onRetry, token, apiUrl }) 
         body: JSON.stringify({ answers: answersRef.current })
       });
       setResult({ ...data, isTimeUp });
+      setShowReview(false);
     } catch (err) {
       submittedRef.current = false;
       setSubmitted(false);
@@ -105,6 +107,20 @@ export default function TestWindow({ levelId, onBack, onRetry, token, apiUrl }) 
     }));
   };
 
+  const requestSubmit = () => {
+    const unanswered = questions.length - Object.keys(answers).length;
+    if (unanswered > 0) {
+      const ok = window.confirm(
+        `You left ${unanswered} question${unanswered === 1 ? '' : 's'} unanswered. Submit anyway?`
+      );
+      if (!ok) return;
+    } else {
+      const ok = window.confirm('Submit this assessment now?');
+      if (!ok) return;
+    }
+    submitAnswers(false);
+  };
+
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -136,9 +152,10 @@ export default function TestWindow({ levelId, onBack, onRetry, token, apiUrl }) 
     const totalQ = result.totalQuestions;
     const scaledMarks = scaleLevelScore(score, totalQ).toFixed(1);
     const threshold = passThreshold(totalQ);
+    const details = Array.isArray(result.details) ? result.details : [];
 
     return (
-      <div className="result-card fade-in">
+      <div className="result-card fade-in result-card-wide">
         <div className={`result-icon ${isPass ? 'pass' : 'fail'}`} aria-hidden="true">
           {isPass ? <CheckCircle2 size={42} /> : <XCircle size={42} />}
         </div>
@@ -163,6 +180,44 @@ export default function TestWindow({ levelId, onBack, onRetry, token, apiUrl }) 
             : `You scored below 50% (needed ${threshold}/${totalQ}). Review the material and try again to unlock the next stage.`}
         </p>
 
+        {details.length > 0 && (
+          <div className="review-section">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setShowReview((v) => !v)}
+            >
+              {showReview ? 'Hide question review' : 'Review answers'}
+            </button>
+
+            {showReview && (
+              <ol className="review-list">
+                {details.map((item, idx) => (
+                  <li key={item.questionId || idx} className={`review-item ${item.isCorrect ? 'correct' : 'incorrect'}`}>
+                    <div className="review-item-header">
+                      <span>Q{idx + 1}</span>
+                      <span>{item.isCorrect ? 'Correct' : 'Incorrect'}</span>
+                    </div>
+                    <p className="review-question">{item.questionText}</p>
+                    <p className="review-meta">
+                      Your answer:{' '}
+                      {item.studentAnswer == null
+                        ? 'Not answered'
+                        : item.options?.[item.studentAnswer] ?? `Option ${item.studentAnswer}`}
+                    </p>
+                    {!item.isCorrect && (
+                      <p className="review-meta review-correct">
+                        Correct:{' '}
+                        {item.options?.[item.correctAnswer] ?? `Option ${item.correctAnswer}`}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+        )}
+
         <div className="result-actions">
           <button type="button" className="btn btn-secondary" onClick={onBack}>
             <ArrowLeft size={16} aria-hidden="true" /> Back to dashboard
@@ -180,6 +235,7 @@ export default function TestWindow({ levelId, onBack, onRetry, token, apiUrl }) 
   const currentQuestion = questions[currentIdx];
   const totalQuestions = questions.length;
   const isTimeUrgent = timeLeft < 120;
+  const unansweredCount = totalQuestions - Object.keys(answers).length;
 
   return (
     <div className="test-page-container fade-in">
@@ -188,6 +244,7 @@ export default function TestWindow({ levelId, onBack, onRetry, token, apiUrl }) 
           <h2 className="test-heading">DSA assessment — Level {levelId}</h2>
           <span className="test-meta">
             Answered: {Object.keys(answers).length} / {totalQuestions}
+            {unansweredCount > 0 ? ` · ${unansweredCount} blank` : ''}
           </span>
         </div>
 
@@ -282,11 +339,7 @@ export default function TestWindow({ levelId, onBack, onRetry, token, apiUrl }) 
             type="button"
             className="btn btn-success"
             disabled={submitting}
-            onClick={() => {
-              if (window.confirm('Submit this assessment now?')) {
-                submitAnswers(false);
-              }
-            }}
+            onClick={requestSubmit}
           >
             <CheckCircle2 size={16} aria-hidden="true" />
             {submitting ? 'Submitting…' : 'Submit assessment'}

@@ -6,11 +6,6 @@ import DsaDashboard from './components/DsaDashboard';
 import TestWindow from './components/TestWindow';
 import AdminPanel from './components/AdminPanel';
 import { apiFetch, getApiUrl } from './api';
-import {
-  LOCAL_DEMO_ENABLED,
-  getLocalDemoUserFromToken,
-  isLocalDemoToken
-} from './localDemo';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -37,18 +32,6 @@ export default function App() {
       }
 
       try {
-        // TEMPORARY local demo restore — no API / DB
-        if (LOCAL_DEMO_ENABLED && isLocalDemoToken(storedToken)) {
-          const demoUser = getLocalDemoUserFromToken(storedToken);
-          if (!demoUser) throw new Error('Invalid demo session');
-          if (cancelled) return;
-          setUser(demoUser);
-          setToken(storedToken);
-          localStorage.setItem('user', JSON.stringify(demoUser));
-          setCurrentView(demoUser.role === 'admin' ? 'admin' : 'courses');
-          return;
-        }
-
         let parsedUser;
         try {
           parsedUser = JSON.parse(storedUser);
@@ -64,7 +47,6 @@ export default function App() {
           localStorage.setItem('user', JSON.stringify(data.user));
           setCurrentView(data.user.role === 'admin' ? 'admin' : 'courses');
         } catch (err) {
-          // Backward compatible with backends that do not yet expose /api/auth/me
           if (err.status === 404 || err.status === 0) {
             if (cancelled) return;
             setUser(parsedUser);

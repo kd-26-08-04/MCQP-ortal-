@@ -1,5 +1,3 @@
-import { handleLocalDemoRequest, isLocalDemoToken, LOCAL_DEMO_ENABLED } from './localDemo';
-
 const API_URL =
   import.meta.env.VITE_API_URL ||
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
@@ -11,15 +9,6 @@ export function getApiUrl() {
 }
 
 export async function apiFetch(path, { token, ...options } = {}) {
-  // TEMPORARY: local demo sessions never hit the network / DB (localhost only)
-  if (LOCAL_DEMO_ENABLED && isLocalDemoToken(token)) {
-    return handleLocalDemoRequest(path, {
-      token,
-      method: options.method || 'GET',
-      body: options.body
-    });
-  }
-
   const headers = {
     ...(options.body ? { 'Content-Type': 'application/json' } : {}),
     ...(options.headers || {})
