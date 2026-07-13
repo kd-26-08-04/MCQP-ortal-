@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { BRANCHES } = require('./constants');
 
 const UserSchema = new mongoose.Schema({
   username: {
@@ -27,6 +28,18 @@ const UserSchema = new mongoose.Schema({
     type: String,
     enum: ['student', 'admin'],
     default: 'student'
+  },
+  branch: {
+    type: String,
+    enum: BRANCHES,
+    trim: true,
+    default: undefined
+  },
+  semester: {
+    type: Number,
+    min: 1,
+    max: 8,
+    default: undefined
   },
   createdAt: {
     type: Date,

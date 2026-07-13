@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Users, BookOpen, Download, Award, RotateCcw, Plus, Trash2, Pencil, Search } from 'lucide-react';
 import { apiFetch, getApiUrl } from '../api';
+import { BRANCHES } from '../constants';
 
 const EMPTY_FORM = {
   level: 1,
@@ -15,6 +16,9 @@ export default function AdminPanel({ token }) {
   const [questions, setQuestions] = useState([]);
   const [filterLevel, setFilterLevel] = useState('all');
   const [search, setSearch] = useState('');
+  const [sortBy, setSortBy] = useState('name');
+  const [filterBranch, setFilterBranch] = useState('all');
+  const [filterYear, setFilterYear] = useState('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -80,13 +84,37 @@ export default function AdminPanel({ token }) {
   const filteredStudents = useMemo(() => {
     if (!stats?.students) return [];
     const q = search.trim().toLowerCase();
-    if (!q) return stats.students;
-    return stats.students.filter(
-      (s) =>
+
+    let list = stats.students.filter((s) => {
+      const matchesSearch =
+        !q ||
         s.username?.toLowerCase().includes(q) ||
-        s.email?.toLowerCase().includes(q)
-    );
-  }, [stats, search]);
+        s.email?.toLowerCase().includes(q) ||
+        s.branch?.toLowerCase().includes(q);
+      const matchesBranch = filterBranch === 'all' || s.branch === filterBranch;
+      const matchesYear = filterYear === 'all' || String(s.year) === String(filterYear);
+      return matchesSearch && matchesBranch && matchesYear;
+    });
+
+    const collator = new Intl.Collator(undefined, { sensitivity: 'base' });
+    list = [...list].sort((a, b) => {
+      if (sortBy === 'branch') {
+        const cmp = collator.compare(a.branch || 'zzz', b.branch || 'zzz');
+        return cmp !== 0 ? cmp : collator.compare(a.username || '', b.username || '');
+      }
+      if (sortBy === 'year') {
+        const ay = a.year ?? 99;
+        const by = b.year ?? 99;
+        if (ay !== by) return ay - by;
+        const sem = (a.semester ?? 99) - (b.semester ?? 99);
+        return sem !== 0 ? sem : collator.compare(a.username || '', b.username || '');
+      }
+      // name (default)
+      return collator.compare(a.username || '', b.username || '');
+    });
+
+    return list;
+  }, [stats, search, sortBy, filterBranch, filterYear]);
 
   const handleDownloadPdf = async (studentId, username) => {
     setDownloadingId(studentId);
@@ -262,18 +290,53 @@ export default function AdminPanel({ token }) {
           </div>
 
           <div className="admin-table-container">
-            <div className="table-header-block">
+            <div className="table-header-block table-header-stack">
               <h2 className="table-title">Performance track</h2>
-              <div className="search-field">
-                <Search size={14} aria-hidden="true" />
-                <input
-                  type="search"
-                  className="form-input search-input"
-                  placeholder="Search name or email"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  aria-label="Search students"
-                />
+              <div className="student-controls">
+                <div className="search-field">
+                  <Search size={14} aria-hidden="true" />
+                  <input
+                    type="search"
+                    className="form-input search-input"
+                    placeholder="Search name, email, branch"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    aria-label="Search students"
+                  />
+                </div>
+                <select
+                  className="form-input level-filter"
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  aria-label="Sort students"
+                >
+                  <option value="name">Sort: Name</option>
+                  <option value="branch">Sort: Branch</option>
+                  <option value="year">Sort: Year / Semester</option>
+                </select>
+                <select
+                  className="form-input level-filter"
+                  value={filterBranch}
+                  onChange={(e) => setFilterBranch(e.target.value)}
+                  aria-label="Filter by branch"
+                >
+                  <option value="all">All branches</option>
+                  {(stats.branches || BRANCHES).map((b) => (
+                    <option key={b} value={b}>{b}</option>
+                  ))}
+                </select>
+                <select
+                  className="form-input level-filter"
+                  value={filterYear}
+                  onChange={(e) => setFilterYear(e.target.value)}
+                  aria-label="Filter by year"
+                >
+                  <option value="all">All years</option>
+                  <option value="1">Year 1</option>
+                  <option value="2">Year 2</option>
+                  <option value="3">Year 3</option>
+                  <option value="4">Year 4</option>
+                </select>
               </div>
             </div>
 
@@ -285,6 +348,8 @@ export default function AdminPanel({ token }) {
                   <thead>
                     <tr>
                       <th scope="col">Student</th>
+                      <th scope="col">Branch</th>
+                      <th scope="col">Sem / Year</th>
                       <th scope="col">Stages</th>
                       <th scope="col">Completed</th>
                       <th scope="col">Score / 100</th>
@@ -297,6 +362,15 @@ export default function AdminPanel({ token }) {
                         <td>
                           <div className="student-name-cell">{student.username}</div>
                           <div className="student-email-cell">{student.email}</div>
+                        </td>
+                        <td>
+                          <span className="completed-count">{student.branch || '—'}</span>
+                        </td>
+                        <td>
+                          <span className="completed-count">
+                            {student.semester != null ? `Sem ${student.semester}` : '—'}
+                            {student.year != null ? ` · Y${student.year}` : ''}
+                          </span>
                         </td>
                         <td>
                           <div className="progress-pill-container">

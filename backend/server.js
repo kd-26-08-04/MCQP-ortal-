@@ -10,6 +10,7 @@ const { User, Progress, Question } = require('./models');
 const { authenticateToken, requireAdmin, signToken, publicUser } = require('./auth');
 const { generateStudentReport } = require('./pdfGenerator');
 const { totalScaledMarks, hasPassed, sanitizeFilename } = require('./utils/scoring');
+const { academicYearFromSemester, BRANCHES } = require('./constants');
 const {
   validateRegisterInput,
   validateLoginInput,
@@ -163,7 +164,8 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       return res.status(400).json({ message: validation.errors[0], errors: validation.errors });
     }
 
-    const { username, email, password } = validation.value;
+    const { username, email, password, branch, semester } = validation.value;
+
     const adminLoginId = normalizeEmail(process.env.ADMIN_USERNAME || '');
     const reservedEmails = new Set(
       [adminLoginId, resolveAdminStorageEmail(adminLoginId || 'admin@eistatech.local')]
@@ -185,7 +187,9 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       username,
       email,
       password: hashedPassword,
-      role: 'student'
+      role: 'student',
+      branch,
+      semester
     });
 
     const token = signToken(newUser);
@@ -431,11 +435,15 @@ app.get('/api/admin/stats', authenticateToken, requireAdmin, async (_req, res) =
     const studentPerformance = students.map((student) => {
       const studentProgress = progressByUser.get(student._id.toString()) || [];
       const completedCount = studentProgress.filter((p) => p.status === 'completed').length;
+      const semester = student.semester ?? null;
 
       return {
         id: student._id,
         username: student.username,
         email: student.email,
+        branch: student.branch || null,
+        semester,
+        year: semester != null ? academicYearFromSemester(semester) : null,
         levelsCompleted: completedCount,
         totalMarks: totalScaledMarks(studentProgress),
         progress: studentProgress
@@ -445,6 +453,7 @@ app.get('/api/admin/stats', authenticateToken, requireAdmin, async (_req, res) =
     res.json({
       totalStudents: students.length,
       totalSubjects: 1,
+      branches: BRANCHES,
       students: studentPerformance
     });
   } catch (error) {

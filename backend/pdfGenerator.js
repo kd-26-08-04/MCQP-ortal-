@@ -27,17 +27,27 @@ function generateStudentReport(user, progressList, stream) {
     .fontSize(14)
     .text('Student Profile', 50, 150);
 
-  doc.rect(50, 170, 495.28, 85).strokeColor(borderLight).lineWidth(1).stroke();
+  doc.rect(50, 170, 495.28, 110).strokeColor(borderLight).lineWidth(1).stroke();
 
   doc.fontSize(10).font('Helvetica-Bold').fillColor(textColor);
   doc.text('Student Name:', 70, 185);
   doc.text('Email Address:', 70, 205);
-  doc.text('Subject Course:', 70, 225);
+  doc.text('Branch / Sem:', 70, 225);
+  doc.text('Subject Course:', 70, 245);
+
+  const { academicYearFromSemester } = require('./constants');
+  const year = user.semester != null ? academicYearFromSemester(user.semester) : null;
+  const branchSem = [
+    user.branch || 'N/A',
+    user.semester != null ? `Sem ${user.semester}` : null,
+    year != null ? `Year ${year}` : null
+  ].filter(Boolean).join(' · ');
 
   doc.font('Helvetica').fillColor(bodyColor);
   doc.text(user.username || 'N/A', 160, 185);
   doc.text(user.email || 'N/A', 160, 205);
-  doc.text('Data Structures & Algorithms (DSA)', 160, 225);
+  doc.text(branchSem, 160, 225);
+  doc.text('Data Structures & Algorithms (DSA)', 160, 245);
 
   doc.font('Helvetica-Bold').fillColor(textColor);
   doc.text('Levels Completed:', 340, 185);
@@ -54,9 +64,9 @@ function generateStudentReport(user, progressList, stream) {
   doc.fillColor(textColor)
     .font('Helvetica-Bold')
     .fontSize(14)
-    .text('Level-wise Progress Details', 50, 280);
+    .text('Level-wise Progress Details', 50, 305);
 
-  const tableTop = 305;
+  const tableTop = 330;
   const colLevelLeft = 60;
   const colStatusLeft = 160;
   const colRawScoreLeft = 280;

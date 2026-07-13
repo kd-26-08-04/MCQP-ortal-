@@ -1234,10 +1234,24 @@ a {
   font-weight: 600;
 }
 
-.admin-tabs {
+.table-header-stack {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.85rem;
+}
+
+.student-controls {
   display: flex;
-  gap: 0.35rem;
-  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.field-hint {
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  color: hsl(var(--muted));
 }
 
 .search-field {

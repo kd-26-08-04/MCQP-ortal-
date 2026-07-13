@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
 import { LogIn, UserPlus } from 'lucide-react';
 import { apiFetch } from '../api';
+import { BRANCHES, SEMESTERS, academicYearFromSemester } from '../constants';
 
 export default function Auth({ onAuthSuccess }) {
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [branch, setBranch] = useState('CSE');
+  const [semester, setSemester] = useState(1);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -18,7 +21,7 @@ export default function Auth({ onAuthSuccess }) {
     const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
     const payload = isLogin
       ? { email, password }
-      : { username, email, password };
+      : { username, email, password, branch, semester: Number(semester) };
 
     try {
       const { data } = await apiFetch(endpoint, {
@@ -38,6 +41,8 @@ export default function Auth({ onAuthSuccess }) {
     setError('');
   };
 
+  const yearLabel = academicYearFromSemester(Number(semester));
+
   return (
     <div className="auth-page fade-in">
       <div className="auth-card">
@@ -50,7 +55,7 @@ export default function Auth({ onAuthSuccess }) {
           <p className="auth-subtitle">
             {isLogin
               ? 'Sign in with your email (or admin ID) to continue.'
-              : 'Register as a student to start DSA level tests.'}
+              : 'Register with your branch and semester (1–8) to start DSA tests.'}
           </p>
         </div>
 
@@ -110,6 +115,42 @@ export default function Auth({ onAuthSuccess }) {
               required
             />
           </div>
+
+          {!isLogin && (
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label" htmlFor="auth-branch">Branch</label>
+                <select
+                  id="auth-branch"
+                  className="form-input"
+                  value={branch}
+                  onChange={(e) => setBranch(e.target.value)}
+                  required
+                >
+                  {BRANCHES.map((b) => (
+                    <option key={b} value={b}>{b}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="auth-semester">Semester</label>
+                <select
+                  id="auth-semester"
+                  className="form-input"
+                  value={semester}
+                  onChange={(e) => setSemester(Number(e.target.value))}
+                  required
+                >
+                  {SEMESTERS.map((s) => (
+                    <option key={s} value={s}>
+                      Semester {s} (Year {academicYearFromSemester(s)})
+                    </option>
+                  ))}
+                </select>
+                <p className="field-hint">Total 8 semesters · currently Year {yearLabel}</p>
+              </div>
+            </div>
+          )}
 
           <button type="submit" className="btn btn-primary btn-block" disabled={loading}>
             {isLogin ? <LogIn size={18} aria-hidden="true" /> : <UserPlus size={18} aria-hidden="true" />}

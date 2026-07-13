@@ -1,4 +1,5 @@
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const { BRANCHES, SEMESTERS, academicYearFromSemester } = require('./constants');
 
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
@@ -8,11 +9,14 @@ function isValidEmail(email) {
   return EMAIL_RE.test(normalizeEmail(email));
 }
 
-function validateRegisterInput({ username, email, password }) {
+function validateRegisterInput({ username, email, password, branch, semester }) {
   const errors = [];
   const cleanUsername = String(username || '').trim();
   const cleanEmail = normalizeEmail(email);
   const cleanPassword = String(password || '');
+  const cleanBranchRaw = String(branch || '').trim();
+  const cleanBranch = BRANCHES.find((b) => b.toLowerCase() === cleanBranchRaw.toLowerCase()) || '';
+  const cleanSemester = Number.parseInt(semester, 10);
 
   if (cleanUsername.length < 3 || cleanUsername.length > 40) {
     errors.push('Username must be between 3 and 40 characters.');
@@ -26,6 +30,12 @@ function validateRegisterInput({ username, email, password }) {
   if (cleanPassword.length < 8 || cleanPassword.length > 128) {
     errors.push('Password must be between 8 and 128 characters.');
   }
+  if (!BRANCHES.includes(cleanBranch)) {
+    errors.push(`Branch is required. Choose one of: ${BRANCHES.join(', ')}.`);
+  }
+  if (!SEMESTERS.includes(cleanSemester)) {
+    errors.push('Semester is required (1 through 8).');
+  }
 
   return {
     ok: errors.length === 0,
@@ -33,7 +43,10 @@ function validateRegisterInput({ username, email, password }) {
     value: {
       username: cleanUsername,
       email: cleanEmail,
-      password: cleanPassword
+      password: cleanPassword,
+      branch: cleanBranch,
+      semester: cleanSemester,
+      year: academicYearFromSemester(cleanSemester)
     }
   };
 }
@@ -141,5 +154,6 @@ module.exports = {
   isValidEmail,
   validateQuestionPayload,
   resolveAdminStorageEmail,
-  EMAIL_RE
+  EMAIL_RE,
+  academicYearFromSemester
 };

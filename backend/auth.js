@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const { academicYearFromSemester } = require('./constants');
 
 const isProduction = process.env.NODE_ENV === 'production';
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -54,11 +55,15 @@ function requireAdmin(req, res, next) {
 }
 
 function publicUser(user) {
+  const semester = user.semester ?? null;
   return {
     id: user._id,
     username: user.username,
     email: user.email,
-    role: user.role
+    role: user.role,
+    branch: user.branch || null,
+    semester,
+    year: semester != null ? academicYearFromSemester(semester) : null
   };
 }
 
