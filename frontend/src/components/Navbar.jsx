@@ -2,54 +2,53 @@ import React from 'react';
 import { LogOut, Shield, User as UserIcon, BookOpen } from 'lucide-react';
 
 export default function Navbar({ user, onViewChange, currentView, onLogout }) {
+  const homeView = user ? (user.role === 'admin' ? 'admin' : 'courses') : 'auth';
+
   return (
-    <nav className="navbar">
-      <div className="nav-brand" onClick={() => onViewChange(user ? (user.role === 'admin' ? 'admin' : 'courses') : 'auth')}>
-        <img
-          src="/EISTATECH_BG.png"
-          alt="EISTATECH Logo"
-          style={{ height: '56px', objectFit: 'contain', display: 'block', borderRadius: '6px' }}
-        />
-        <span style={{ fontSize: '1.25rem', fontWeight: 800 }}>EISTATECH MCQ Portal</span>
-      </div>
+    <nav className="navbar" aria-label="Primary">
+      <button
+        type="button"
+        className="nav-brand"
+        onClick={() => onViewChange(homeView)}
+      >
+        <span className="brand-mark brand-mark-sm" aria-hidden="true">E</span>
+        <span className="nav-brand-text">
+          <span className="nav-brand-name">Eistatech</span>
+          <span className="nav-brand-sub">MCQ Portal</span>
+        </span>
+      </button>
 
       {user && (
         <div className="nav-actions">
           {user.role === 'admin' && (
-            <div style={{ display: 'flex', gap: '0.75rem' }}>
+            <div className="nav-tabs">
               <button
-                className={`btn btn-secondary ${currentView === 'admin' ? 'btn-primary' : ''}`}
-                style={{ padding: '0.4rem 1rem', fontSize: '0.85rem' }}
+                type="button"
+                className={`btn btn-ghost ${currentView === 'admin' ? 'is-active' : ''}`}
                 onClick={() => onViewChange('admin')}
               >
-                <Shield size={14} />
-                Admin Panel
+                <Shield size={14} aria-hidden="true" />
+                Admin
               </button>
               <button
-                className={`btn btn-secondary ${currentView === 'courses' || currentView === 'dsa-dashboard' ? 'btn-primary' : ''}`}
-                style={{ padding: '0.4rem 1rem', fontSize: '0.85rem' }}
+                type="button"
+                className={`btn btn-ghost ${currentView === 'courses' || currentView === 'dsa-dashboard' || currentView === 'test' ? 'is-active' : ''}`}
                 onClick={() => onViewChange('courses')}
               >
-                <BookOpen size={14} />
-                Student View
+                <BookOpen size={14} aria-hidden="true" />
+                Courses
               </button>
             </div>
           )}
 
           <div className="user-info">
-            <UserIcon size={16} />
+            <UserIcon size={16} aria-hidden="true" />
             <span>{user.username}</span>
-            <span className={`role-badge ${user.role}`}>
-              {user.role}
-            </span>
+            <span className={`role-badge ${user.role}`}>{user.role}</span>
           </div>
 
-          <button
-            className="btn btn-secondary"
-            style={{ padding: '0.4rem 1rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-            onClick={onLogout}
-          >
-            <LogOut size={14} />
+          <button type="button" className="btn btn-secondary btn-compact" onClick={onLogout}>
+            <LogOut size={14} aria-hidden="true" />
             Logout
           </button>
         </div>

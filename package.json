@@ -1,0 +1,13 @@
+{
+  "name": "mcqp-ortal-",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Eistatech MCQ Assessment Portal — Express API + React Vite frontend.",
+  "scripts": {
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "seed": "npm --prefix backend run seed",
+    "build": "npm --prefix frontend run build"
+  },
+  "license": "ISC"
+}

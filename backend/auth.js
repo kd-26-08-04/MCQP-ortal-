@@ -1,17 +1,43 @@
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'mcq_test_secret_key_12345';
+const isProduction = process.env.NODE_ENV === 'production';
+const JWT_SECRET = process.env.JWT_SECRET;
 
-// Authenticate user middleware
+if (!JWT_SECRET) {
+  if (isProduction) {
+    console.error('FATAL: JWT_SECRET environment variable is required in production.');
+    process.exit(1);
+  }
+  console.warn('WARNING: JWT_SECRET is not set. Using an insecure development default.');
+}
+
+const RESOLVED_JWT_SECRET = JWT_SECRET || 'dev-only-insecure-jwt-secret-change-me';
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+
+function signToken(user) {
+  return jwt.sign(
+    {
+      id: user._id.toString(),
+      username: user.username,
+      role: user.role,
+      email: user.email
+    },
+    RESOLVED_JWT_SECRET,
+    { expiresIn: JWT_EXPIRES_IN }
+  );
+}
+
 function authenticateToken(req, res, next) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.startsWith('Bearer ')
+    ? authHeader.slice(7)
+    : null;
 
   if (!token) {
     return res.status(401).json({ message: 'Access token missing. Please log in.' });
   }
 
-  jwt.verify(token, JWT_SECRET, (err, decodedUser) => {
+  jwt.verify(token, RESOLVED_JWT_SECRET, (err, decodedUser) => {
     if (err) {
       return res.status(403).json({ message: 'Invalid or expired token. Please log in again.' });
     }
@@ -20,7 +46,6 @@ function authenticateToken(req, res, next) {
   });
 }
 
-// Require admin role middleware
 function requireAdmin(req, res, next) {
   if (!req.user || req.user.role !== 'admin') {
     return res.status(403).json({ message: 'Forbidden. Admin privileges required.' });
@@ -28,8 +53,19 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+function publicUser(user) {
+  return {
+    id: user._id,
+    username: user.username,
+    email: user.email,
+    role: user.role
+  };
+}
+
 module.exports = {
   authenticateToken,
   requireAdmin,
-  JWT_SECRET
+  signToken,
+  publicUser,
+  JWT_SECRET: RESOLVED_JWT_SECRET
 };

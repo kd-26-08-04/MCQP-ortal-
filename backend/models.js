@@ -1,23 +1,27 @@
 const mongoose = require('mongoose');
 
-// User Schema
 const UserSchema = new mongoose.Schema({
   username: {
     type: String,
     required: true,
     unique: true,
-    trim: true
+    trim: true,
+    minlength: 3,
+    maxlength: 40
   },
   email: {
     type: String,
     required: true,
     unique: true,
     lowercase: true,
-    trim: true
+    trim: true,
+    maxlength: 254,
+    match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Invalid email address']
   },
   password: {
     type: String,
-    required: true
+    required: true,
+    minlength: 8
   },
   role: {
     type: String,
@@ -30,7 +34,6 @@ const UserSchema = new mongoose.Schema({
   }
 });
 
-// Progress Schema (tracks student progress per subject level)
 const ProgressSchema = new mongoose.Schema({
   user: {
     type: mongoose.Schema.Types.ObjectId,
@@ -47,15 +50,19 @@ const ProgressSchema = new mongoose.Schema({
   },
   level: {
     type: Number,
-    required: true
+    required: true,
+    min: 1,
+    max: 10
   },
   score: {
     type: Number,
-    default: 0
+    default: 0,
+    min: 0
   },
   totalQuestions: {
     type: Number,
-    default: 10
+    default: 10,
+    min: 1
   },
   status: {
     type: String,
@@ -68,7 +75,6 @@ const ProgressSchema = new mongoose.Schema({
   }
 });
 
-// Question Schema
 const QuestionSchema = new mongoose.Schema({
   course: {
     type: String,
@@ -80,16 +86,22 @@ const QuestionSchema = new mongoose.Schema({
   },
   level: {
     type: Number,
-    required: true
+    required: true,
+    min: 1,
+    max: 10
   },
   questionText: {
     type: String,
-    required: true
+    required: true,
+    maxlength: 2000
   },
   options: {
     type: [String],
     required: true,
-    validate: [opts => opts.length === 4, 'Must have exactly 4 options']
+    validate: {
+      validator: (opts) => Array.isArray(opts) && opts.length === 4 && opts.every((o) => typeof o === 'string' && o.trim().length > 0),
+      message: 'Must have exactly 4 non-empty options'
+    }
   },
   correctOptionIndex: {
     type: Number,
@@ -99,8 +111,8 @@ const QuestionSchema = new mongoose.Schema({
   }
 });
 
-// Compound index to ensure uniqueness of progress per user/course/subject/level
 ProgressSchema.index({ user: 1, course: 1, subject: 1, level: 1 }, { unique: true });
+QuestionSchema.index({ subject: 1, level: 1 });
 
 const User = mongoose.model('User', UserSchema);
 const Progress = mongoose.model('Progress', ProgressSchema);

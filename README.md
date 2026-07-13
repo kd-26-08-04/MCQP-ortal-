@@ -1,49 +1,83 @@
-# Eistatech MCQ Portal - Deployment Guide
+# Eistatech MCQ Portal
 
-This repository contains the complete full-stack code for the MCQ Assessment Portal.
-- **Backend**: Node.js Express server + MongoDB Mongoose models + PDF report generation.
-- **Frontend**: React application built with Vite and custom Vanilla CSS.
+Full-stack MCQ assessment portal for progressive DSA level testing.
 
----
-
-## 1. Hosting the Backend on Render
-
-Render is ideal for hosting Node.js Express APIs.
-
-### Steps to Deploy:
-1. Log in to [Render](https://render.com/) and click **New** -> **Web Service**.
-2. Connect your GitHub repository: `https://github.com/kd-26-08-04/MCQP-ortal-.git`.
-3. In the Web Service configuration settings:
-   - **Name**: `mcq-portal-backend` (or your choice).
-   - **Root Directory**: `backend` (This is critical since the backend is in a subfolder).
-   - **Runtime**: `Node`.
-   - **Build Command**: `npm install`.
-   - **Start Command**: `npm start` (or `node server.js`).
-4. Click **Advanced** and add the following **Environment Variables**:
-   - `MONGODB_URI`: Your MongoDB Atlas connection string.
-   - `JWT_SECRET`: A secure random secret string (e.g. `your_custom_jwt_secret_key`).
-   - `PORT`: `5000` (Render will automatically allocate a port, but defining it is safe).
-   - `ADMIN_USERNAME`: `admin@2026`
-   - `ADMIN_PASSWORD`: `1234567890`
-5. Click **Create Web Service**. 
-6. Once deployed, Render will provide a public URL (e.g., `https://mcq-portal-backend.onrender.com`). Copy this URL.
+- **Backend**: Node.js + Express + MongoDB (Mongoose) + PDF reports
+- **Frontend**: React (Vite) with custom CSS
 
 ---
 
-## 2. Hosting the Frontend on Vercel
+## Local development
 
-Vercel is optimal for static frontends created with React/Vite.
+### 1. Backend
 
-### Steps to Deploy:
-1. Log in to [Vercel](https://vercel.com/) and click **Add New** -> **Project**.
-2. Import your GitHub repository: `https://github.com/kd-26-08-04/MCQP-ortal-.git`.
-3. In the project configure settings:
-   - **Root Directory**: Click "Edit" and select the **`frontend`** directory (this ensures Vercel compiles from the React folder).
-   - **Framework Preset**: Vercel will automatically detect `Vite`.
-   - **Build Command**: `npm run build` (default).
-   - **Output Directory**: `dist` (default).
-4. Expand the **Environment Variables** section and add:
-   - **Key**: `VITE_API_URL`
-   - **Value**: `https://mcq-portal-backend.onrender.com` (Paste the Render backend URL you copied, without a trailing slash).
-5. Click **Deploy**.
-6. Once the build completes, Vercel will provide a live URL (e.g., `https://mcq-portal.vercel.app`) to access the application.
+```bash
+cd backend
+cp .env.example .env
+# Edit .env — set MONGODB_URI, JWT_SECRET, ADMIN_USERNAME, ADMIN_PASSWORD, FRONTEND_URL
+npm install
+npm run seed   # seeds DSA Level 1 questions
+npm run dev
+```
+
+### 2. Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Optional: create `frontend/.env` with:
+
+```
+VITE_API_URL=http://localhost:5000
+```
+
+---
+
+## Environment variables (backend)
+
+| Variable | Required | Notes |
+|---|---|---|
+| `MONGODB_URI` | Yes (prod) | MongoDB Atlas or local URI |
+| `JWT_SECRET` | **Yes in production** | Long random secret; server refuses to start without it in `NODE_ENV=production` |
+| `FRONTEND_URL` | Recommended | Comma-separated allowed CORS origins |
+| `ADMIN_USERNAME` | Recommended | Admin bootstrap email (login only) |
+| `ADMIN_PASSWORD` | Recommended | Strong password; never commit real values |
+| `PORT` | No | Defaults to `5000` |
+| `TEST_TIME_LIMIT_MINUTES` | No | Defaults to `20` |
+
+**Security notes**
+- Student registration always creates `role: student`. Clients cannot self-promote to admin.
+- Admin accounts are provisioned via env bootstrap credentials on login.
+- Auth endpoints are rate-limited. Helmet security headers are enabled.
+- Do not put real secrets in README, git, or screenshots.
+
+---
+
+## Deploy
+
+### Backend (Render)
+
+1. New Web Service → root directory `backend`
+2. Build: `npm install`
+3. Start: `npm start`
+4. Set env vars from the table above (`NODE_ENV=production`, `FRONTEND_URL` = your Vercel URL)
+
+### Frontend (Vercel)
+
+1. Import repo → root directory `frontend`
+2. Framework: Vite
+3. Env: `VITE_API_URL` = your Render backend URL (no trailing slash)
+
+---
+
+## Seed questions
+
+```bash
+cd backend
+npm run seed
+```
+
+Only Level 1 ships with curated questions. Additional levels need questions inserted into MongoDB before students can take those tests.

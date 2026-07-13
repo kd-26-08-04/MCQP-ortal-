@@ -1,56 +1,93 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Timer, ArrowRight, ArrowLeft, CheckCircle2, XCircle, AlertCircle, RefreshCw } from 'lucide-react';
+import {
+  Timer,
+  ArrowRight,
+  ArrowLeft,
+  CheckCircle2,
+  XCircle,
+  RefreshCw
+} from 'lucide-react';
+import { apiFetch } from '../api';
+import { scaleLevelScore, passThreshold } from '../utils/scoring';
 
-export default function TestWindow({ levelId, onBack, token, apiUrl }) {
+export default function TestWindow({ levelId, onBack, onRetry, token, apiUrl }) {
   const [questions, setQuestions] = useState([]);
   const [currentIdx, setCurrentIdx] = useState(0);
-  const [answers, setAnswers] = useState({}); // { questionId: selectedIndex }
-  const [timeLeft, setTimeLeft] = useState(1200); // 20 minutes (1200 seconds)
+  const [answers, setAnswers] = useState({});
+  const [timeLeft, setTimeLeft] = useState(1200);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
 
   const timerRef = useRef(null);
-  const autoSubmitRef = useRef(false);
+  const answersRef = useRef({});
+  const submittedRef = useRef(false);
+  const submitAnswersRef = useRef(async () => {});
 
   useEffect(() => {
-    // Fetch test questions
-    fetch(`${apiUrl}/api/levels/dsa/${levelId}/test`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-      .then(res => {
-        if (!res.ok) throw new Error('Failed to load assessment test');
-        return res.json();
-      })
-      .then(data => {
+    answersRef.current = answers;
+  }, [answers]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    apiFetch(`/api/levels/dsa/${levelId}/test`, { token })
+      .then(({ data }) => {
+        if (cancelled) return;
         setQuestions(data.questions);
-        setTimeLeft(data.timeLimitMinutes * 60);
+        setTimeLeft((data.timeLimitMinutes || 20) * 60);
         setLoading(false);
       })
-      .catch(err => {
+      .catch((err) => {
+        if (cancelled) return;
         setError(err.message);
         setLoading(false);
       });
 
-    // Cleanup timer
     return () => {
+      cancelled = true;
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [apiUrl, token, levelId]);
 
-  // Start timer once questions are loaded
+  const submitAnswers = async (isTimeUp = false) => {
+    if (submittedRef.current) return;
+    submittedRef.current = true;
+    setSubmitted(true);
+    setSubmitting(true);
+
+    if (timerRef.current) clearInterval(timerRef.current);
+
+    try {
+      const { data } = await apiFetch(`/api/levels/dsa/${levelId}/submit`, {
+        method: 'POST',
+        token,
+        body: JSON.stringify({ answers: answersRef.current })
+      });
+      setResult({ ...data, isTimeUp });
+    } catch (err) {
+      submittedRef.current = false;
+      setSubmitted(false);
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  useEffect(() => {
+    submitAnswersRef.current = submitAnswers;
+  });
+
   useEffect(() => {
     if (loading || submitted || questions.length === 0) return;
 
     timerRef.current = setInterval(() => {
-      setTimeLeft(prev => {
+      setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(timerRef.current);
-          if (!autoSubmitRef.current) {
-            autoSubmitRef.current = true;
-            handleAutoSubmit();
-          }
+          submitAnswersRef.current(true);
           return 0;
         }
         return prev - 1;
@@ -58,50 +95,14 @@ export default function TestWindow({ levelId, onBack, token, apiUrl }) {
     }, 1000);
 
     return () => clearInterval(timerRef.current);
-  }, [loading, submitted, questions]);
+  }, [loading, submitted, questions.length]);
 
   const handleSelectOption = (questionId, optionIdx) => {
     if (submitted) return;
-    setAnswers(prev => ({
+    setAnswers((prev) => ({
       ...prev,
       [questionId]: optionIdx
     }));
-  };
-
-  const handleAutoSubmit = () => {
-    // Directly submit current answers state
-    handleSubmit(null, true);
-  };
-
-  const handleSubmit = async (e, isTimeUp = false) => {
-    if (e) e.preventDefault();
-    if (submitted) return;
-
-    setSubmitted(true);
-    if (timerRef.current) clearInterval(timerRef.current);
-
-    try {
-      const response = await fetch(`${apiUrl}/api/levels/dsa/${levelId}/submit`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ answers })
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message || 'Submission failed');
-      }
-
-      setResult({
-        ...data,
-        isTimeUp
-      });
-    } catch (err) {
-      setError(err.message);
-    }
   };
 
   const formatTime = (seconds) => {
@@ -112,64 +113,63 @@ export default function TestWindow({ levelId, onBack, token, apiUrl }) {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: '4rem' }}>
-        <div style={{ fontSize: '1.2rem', color: 'var(--text-muted)' }}>Loading assessment test...</div>
+      <div className="state-block" role="status">
+        Loading assessment…
       </div>
     );
   }
 
-  if (error && !submitted) {
+  if (error && !result) {
     return (
       <div className="test-page-container fade-in">
-        <div className="alert-message error">{error}</div>
-        <button className="btn btn-secondary" onClick={onBack}>
-          <ArrowLeft size={16} /> Back to Dashboard
+        <div className="alert-message error" role="alert">{error}</div>
+        <button type="button" className="btn btn-secondary" onClick={onBack}>
+          <ArrowLeft size={16} aria-hidden="true" /> Back to dashboard
         </button>
       </div>
     );
   }
 
-  // Result view after submission
   if (result) {
     const isPass = result.passed;
     const score = result.score;
     const totalQ = result.totalQuestions;
-    const scaledMarks = ((score / totalQ) * 10).toFixed(1);
-    const passThreshold = Math.ceil(totalQ / 2);
-    
+    const scaledMarks = scaleLevelScore(score, totalQ).toFixed(1);
+    const threshold = passThreshold(totalQ);
+
     return (
       <div className="result-card fade-in">
-        <div className={`result-icon ${isPass ? 'pass' : 'fail'}`}>
+        <div className={`result-icon ${isPass ? 'pass' : 'fail'}`} aria-hidden="true">
           {isPass ? <CheckCircle2 size={42} /> : <XCircle size={42} />}
         </div>
-        
+
         <h2 className="result-title">
-          {result.isTimeUp ? 'Time Expired! ' : ''}
-          {isPass ? 'Assessment Passed!' : 'Assessment Failed'}
+          {result.isTimeUp ? 'Time expired — ' : ''}
+          {isPass ? 'Assessment passed' : 'Assessment failed'}
         </h2>
-        
-        <p className="result-percent">Level {levelId} Results</p>
-        
+
+        <p className="result-percent">Level {levelId} results</p>
+
         <div className="result-score">
           {score} / {totalQ}
         </div>
         <p className="result-percent" style={{ marginTop: '-1rem', fontSize: '1.1rem', fontWeight: 600 }}>
-          Weighted Score: {scaledMarks} / 10 marks
+          Weighted score: {scaledMarks} / 10
         </p>
 
         <p className="result-message">
-          {isPass 
-            ? `Excellent job! You have scored ${score} out of ${totalQ} questions (minimum required is ${passThreshold}/${totalQ}). The next level has been successfully unlocked.` 
-            : `You scored less than 50% (${passThreshold}/${totalQ}). Please review your concepts and attempt the level again to unlock the next stages.`}
+          {isPass
+            ? `You scored ${score} of ${totalQ} (needed ${threshold}). ${result.nextLevelUnlocked ? 'The next level is now unlocked.' : 'Keep going through the remaining stages.'}`
+            : `You scored below 50% (needed ${threshold}/${totalQ}). Review the material and try again to unlock the next stage.`}
         </p>
 
         <div className="result-actions">
-          <button className="btn btn-secondary" onClick={onBack}>
-            <ArrowLeft size={16} /> Back to Dashboard
+          <button type="button" className="btn btn-secondary" onClick={onBack}>
+            <ArrowLeft size={16} aria-hidden="true" /> Back to dashboard
           </button>
           {!isPass && (
-            <button className="btn btn-primary" onClick={() => window.location.reload()}>
-              <RefreshCw size={16} /> Retry Level
+            <button type="button" className="btn btn-primary" onClick={onRetry}>
+              <RefreshCw size={16} aria-hidden="true" /> Retry level
             </button>
           )}
         </div>
@@ -179,38 +179,45 @@ export default function TestWindow({ levelId, onBack, token, apiUrl }) {
 
   const currentQuestion = questions[currentIdx];
   const totalQuestions = questions.length;
-  const isTimeUrgent = timeLeft < 120; // less than 2 minutes
+  const isTimeUrgent = timeLeft < 120;
 
   return (
     <div className="test-page-container fade-in">
       <div className="test-header-bar">
         <div>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>DSA assessment - Level {levelId}</h2>
-          <span style={{ fontSize: '0.85rem', color: 'hsl(var(--text-muted))', fontWeight: 500 }}>
+          <h2 className="test-heading">DSA assessment — Level {levelId}</h2>
+          <span className="test-meta">
             Answered: {Object.keys(answers).length} / {totalQuestions}
           </span>
         </div>
-        
-        <div className={`test-timer ${isTimeUrgent ? 'danger' : ''}`}>
-          <Timer size={18} />
+
+        <div
+          className={`test-timer ${isTimeUrgent ? 'danger' : ''}`}
+          role="timer"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          <Timer size={18} aria-hidden="true" />
           <span>{formatTime(timeLeft)}</span>
         </div>
       </div>
 
-      {/* Grid of question navigation buttons */}
-      <div className="question-nav">
+      <div className="question-nav" role="navigation" aria-label="Question navigator">
         {questions.map((q, idx) => {
           const isAnswered = answers[q._id] !== undefined;
           const isActive = idx === currentIdx;
           let className = 'q-nav-btn';
           if (isAnswered) className += ' answered';
           if (isActive) className += ' active';
-          
+
           return (
-            <button 
-              key={q._id} 
+            <button
+              key={q._id}
+              type="button"
               className={className}
               onClick={() => setCurrentIdx(idx)}
+              aria-current={isActive ? 'true' : undefined}
+              aria-label={`Question ${idx + 1}${isAnswered ? ', answered' : ''}`}
             >
               {idx + 1}
             </button>
@@ -219,26 +226,31 @@ export default function TestWindow({ levelId, onBack, token, apiUrl }) {
       </div>
 
       {currentQuestion && (
-        <div className="question-card fade-in" key={currentQuestion._id}>
+        <div className="question-card" key={currentQuestion._id}>
           <div className="question-header">
-            <span className="question-number">Question {currentIdx + 1} of {totalQuestions}</span>
-            <span className="question-marks">1 Mark</span>
+            <span className="question-number">
+              Question {currentIdx + 1} of {totalQuestions}
+            </span>
+            <span className="question-marks">1 mark</span>
           </div>
 
           <p className="question-text">{currentQuestion.questionText}</p>
 
-          <div className="options-list">
+          <div className="options-list" role="radiogroup" aria-label={`Options for question ${currentIdx + 1}`}>
             {currentQuestion.options.map((option, oIdx) => {
-              const letter = String.fromCharCode(65 + oIdx); // A, B, C, D
+              const letter = String.fromCharCode(65 + oIdx);
               const isSelected = answers[currentQuestion._id] === oIdx;
 
               return (
                 <button
                   key={oIdx}
+                  type="button"
+                  role="radio"
+                  aria-checked={isSelected}
                   className={`option-btn ${isSelected ? 'selected' : ''}`}
                   onClick={() => handleSelectOption(currentQuestion._id, oIdx)}
                 >
-                  <div className="option-letter">{letter}</div>
+                  <div className="option-letter" aria-hidden="true">{letter}</div>
                   <div>{option}</div>
                 </button>
               );
@@ -249,31 +261,35 @@ export default function TestWindow({ levelId, onBack, token, apiUrl }) {
 
       <div className="test-navigation-footer">
         <button
+          type="button"
           className="btn btn-secondary"
-          onClick={() => setCurrentIdx(prev => Math.max(0, prev - 1))}
+          onClick={() => setCurrentIdx((prev) => Math.max(0, prev - 1))}
           disabled={currentIdx === 0}
-          style={{ opacity: currentIdx === 0 ? 0.5 : 1 }}
         >
-          <ArrowLeft size={16} /> Prev
+          <ArrowLeft size={16} aria-hidden="true" /> Prev
         </button>
 
         {currentIdx < totalQuestions - 1 ? (
           <button
+            type="button"
             className="btn btn-secondary"
-            onClick={() => setCurrentIdx(prev => Math.min(totalQuestions - 1, prev + 1))}
+            onClick={() => setCurrentIdx((prev) => Math.min(totalQuestions - 1, prev + 1))}
           >
-            Next <ArrowRight size={16} />
+            Next <ArrowRight size={16} aria-hidden="true" />
           </button>
         ) : (
           <button
+            type="button"
             className="btn btn-success"
-            onClick={(e) => {
-              if (window.confirm('Are you sure you want to submit the test?')) {
-                handleSubmit(e);
+            disabled={submitting}
+            onClick={() => {
+              if (window.confirm('Submit this assessment now?')) {
+                submitAnswers(false);
               }
             }}
           >
-            <CheckCircle2 size={16} /> Submit Assessment
+            <CheckCircle2 size={16} aria-hidden="true" />
+            {submitting ? 'Submitting…' : 'Submit assessment'}
           </button>
         )}
       </div>

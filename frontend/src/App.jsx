@@ -5,56 +5,71 @@ import Courses from './components/Courses';
 import DsaDashboard from './components/DsaDashboard';
 import TestWindow from './components/TestWindow';
 import AdminPanel from './components/AdminPanel';
-
-const API_URL = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:5000' : 'https://mcqp-ortal.onrender.com');
+import { apiFetch, getApiUrl } from './api';
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState('');
-  const [currentView, setCurrentView] = useState('auth'); // 'auth', 'courses', 'dsa-dashboard', 'test', 'admin'
+  const [currentView, setCurrentView] = useState('auth');
   const [selectedLevelId, setSelectedLevelId] = useState(null);
+  const [testInstance, setTestInstance] = useState(0);
   const [loading, setLoading] = useState(true);
+  const apiUrl = getApiUrl();
 
-  // Initialize session from local storage
   useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    const storedToken = localStorage.getItem('token');
+    let cancelled = false;
 
-    if (storedUser && storedToken) {
-      const parsedUser = JSON.parse(storedUser);
-      setUser(parsedUser);
-      setToken(storedToken);
-      
-      // Default views based on user roles
-      if (parsedUser.role === 'admin') {
-        setCurrentView('admin');
-      } else {
-        setCurrentView('courses');
+    async function restoreSession() {
+      const storedUser = localStorage.getItem('user');
+      const storedToken = localStorage.getItem('token');
+
+      if (!storedUser || !storedToken) {
+        if (!cancelled) {
+          setCurrentView('auth');
+          setLoading(false);
+        }
+        return;
       }
-    } else {
-      setCurrentView('auth');
+
+      try {
+        JSON.parse(storedUser);
+        const { data } = await apiFetch('/api/auth/me', { token: storedToken });
+        if (cancelled) return;
+
+        setUser(data.user);
+        setToken(storedToken);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        setCurrentView(data.user.role === 'admin' ? 'admin' : 'courses');
+      } catch {
+        localStorage.removeItem('user');
+        localStorage.removeItem('token');
+        if (!cancelled) {
+          setUser(null);
+          setToken('');
+          setCurrentView('auth');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
-    setLoading(false);
+
+    restoreSession();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleAuthSuccess = (authUser, sessionToken) => {
     localStorage.setItem('user', JSON.stringify(authUser));
     localStorage.setItem('token', sessionToken);
-    
     setUser(authUser);
     setToken(sessionToken);
-
-    if (authUser.role === 'admin') {
-      setCurrentView('admin');
-    } else {
-      setCurrentView('courses');
-    }
+    setCurrentView(authUser.role === 'admin' ? 'admin' : 'courses');
   };
 
   const handleLogout = () => {
     localStorage.removeItem('user');
     localStorage.removeItem('token');
-    
     setUser(null);
     setToken('');
     setCurrentView('auth');
@@ -62,10 +77,12 @@ export default function App() {
   };
 
   const handleViewChange = (view) => {
+    if (!user && view !== 'auth') return;
+    if (user?.role !== 'admin' && view === 'admin') return;
     setCurrentView(view);
   };
 
-  const handleSelectSubject = (subjectId, subjectName) => {
+  const handleSelectSubject = (subjectId) => {
     if (subjectId === 'dsa') {
       setCurrentView('dsa-dashboard');
     }
@@ -73,65 +90,57 @@ export default function App() {
 
   const handleStartTest = (levelId) => {
     setSelectedLevelId(levelId);
+    setTestInstance((n) => n + 1);
     setCurrentView('test');
   };
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#fafafa' }}>
-        <div style={{ fontSize: '1.2rem', fontWeight: 600, color: '#4b5563' }}>Loading MCQ Portal...</div>
+      <div className="boot-screen" role="status" aria-live="polite">
+        <div className="boot-spinner" aria-hidden="true" />
+        <p>Loading Eistatech Portal…</p>
       </div>
     );
   }
 
   return (
     <div className="app-container">
-      <Navbar 
-        user={user} 
-        onViewChange={handleViewChange} 
-        currentView={currentView} 
-        onLogout={handleLogout} 
+      <Navbar
+        user={user}
+        onViewChange={handleViewChange}
+        currentView={currentView}
+        onLogout={handleLogout}
       />
 
       <main className="main-content">
-        {currentView === 'auth' && (
-          <Auth 
-            onAuthSuccess={handleAuthSuccess} 
-            apiUrl={API_URL} 
+        {currentView === 'auth' && <Auth onAuthSuccess={handleAuthSuccess} />}
+
+        {currentView === 'courses' && user && (
+          <Courses onSelectSubject={handleSelectSubject} token={token} apiUrl={apiUrl} />
+        )}
+
+        {currentView === 'dsa-dashboard' && user && (
+          <DsaDashboard
+            onBack={() => setCurrentView('courses')}
+            onStartTest={handleStartTest}
+            token={token}
+            apiUrl={apiUrl}
           />
         )}
 
-        {currentView === 'courses' && (
-          <Courses 
-            onSelectSubject={handleSelectSubject} 
-            token={token} 
-            apiUrl={API_URL} 
+        {currentView === 'test' && user && selectedLevelId != null && (
+          <TestWindow
+            key={`${selectedLevelId}-${testInstance}`}
+            levelId={selectedLevelId}
+            onBack={() => setCurrentView('dsa-dashboard')}
+            onRetry={() => setTestInstance((n) => n + 1)}
+            token={token}
+            apiUrl={apiUrl}
           />
         )}
 
-        {currentView === 'dsa-dashboard' && (
-          <DsaDashboard 
-            onBack={() => setCurrentView('courses')} 
-            onStartTest={handleStartTest} 
-            token={token} 
-            apiUrl={API_URL} 
-          />
-        )}
-
-        {currentView === 'test' && (
-          <TestWindow 
-            levelId={selectedLevelId} 
-            onBack={() => setCurrentView('dsa-dashboard')} 
-            token={token} 
-            apiUrl={API_URL} 
-          />
-        )}
-
-        {currentView === 'admin' && (
-          <AdminPanel 
-            token={token} 
-            apiUrl={API_URL} 
-          />
+        {currentView === 'admin' && user?.role === 'admin' && (
+          <AdminPanel token={token} apiUrl={apiUrl} />
         )}
       </main>
     </div>

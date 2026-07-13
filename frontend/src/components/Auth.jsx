@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { Mail, Lock, User as UserIcon, LogIn, UserPlus } from 'lucide-react';
+import { LogIn, UserPlus } from 'lucide-react';
+import { apiFetch } from '../api';
 
-export default function Auth({ onAuthSuccess, apiUrl }) {
+export default function Auth({ onAuthSuccess }) {
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('student');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -16,22 +16,15 @@ export default function Auth({ onAuthSuccess, apiUrl }) {
     setLoading(true);
 
     const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
-    const payload = isLogin 
+    const payload = isLogin
       ? { email, password }
-      : { username, email, password, role };
+      : { username, email, password };
 
     try {
-      const response = await fetch(`${apiUrl}${endpoint}`, {
+      const { data } = await apiFetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(payload)
       });
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Something went wrong');
-      }
-
       onAuthSuccess(data.user, data.token);
     } catch (err) {
       setError(err.message);
@@ -40,106 +33,101 @@ export default function Auth({ onAuthSuccess, apiUrl }) {
     }
   };
 
+  const switchMode = (loginMode) => {
+    setIsLogin(loginMode);
+    setError('');
+  };
+
   return (
     <div className="auth-page fade-in">
       <div className="auth-card">
-        <img 
-          src="/EISTATECH_BG.png" 
-          alt="EISTATECH Logo" 
-          style={{ height: '52px', objectFit: 'contain', margin: '0 auto 1.25rem', display: 'block', borderRadius: '6px' }} 
-        />
+        <div className="brand-mark" aria-hidden="true">
+          <span>E</span>
+        </div>
         <div className="auth-header">
-          <h2 className="auth-title">{isLogin ? 'Welcome Back' : 'Get Started'}</h2>
+          <p className="brand-eyebrow">Eistatech</p>
+          <h1 className="auth-title">{isLogin ? 'Welcome back' : 'Create your account'}</h1>
           <p className="auth-subtitle">
-            {isLogin 
-              ? 'Sign in to access your courses and test levels' 
-              : 'Create an account to begin assessment testing'}
+            {isLogin
+              ? 'Sign in to continue your assessment path.'
+              : 'Register as a student to start DSA level tests.'}
           </p>
         </div>
 
-        {error && <div className="alert-message error">{error}</div>}
+        {error && (
+          <div className="alert-message error" role="alert">
+            {error}
+          </div>
+        )}
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} noValidate>
           {!isLogin && (
             <div className="form-group">
-              <label className="form-label">Username</label>
-              <div style={{ position: 'relative' }}>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="Enter your username"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  required
-                />
-              </div>
+              <label className="form-label" htmlFor="auth-username">Username</label>
+              <input
+                id="auth-username"
+                type="text"
+                className="form-input"
+                placeholder="jane.doe"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                autoComplete="username"
+                minLength={3}
+                maxLength={40}
+                required
+              />
             </div>
           )}
 
           <div className="form-group">
-            <label className="form-label">Email Address</label>
+            <label className="form-label" htmlFor="auth-email">Email</label>
             <input
+              id="auth-email"
               type="email"
               className="form-input"
               placeholder="name@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
               required
             />
           </div>
 
           <div className="form-group">
-            <label className="form-label">Password</label>
+            <label className="form-label" htmlFor="auth-password">Password</label>
             <input
+              id="auth-password"
               type="password"
               className="form-input"
-              placeholder="••••••••"
+              placeholder={isLogin ? 'Your password' : 'At least 8 characters'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              autoComplete={isLogin ? 'current-password' : 'new-password'}
+              minLength={isLogin ? undefined : 8}
               required
             />
           </div>
 
-          {!isLogin && (
-            <div className="form-group">
-              <label className="form-label">Role</label>
-              <select
-                className="form-input"
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-                style={{ cursor: 'pointer' }}
-              >
-                <option value="student">Student</option>
-                <option value="admin">Administrator</option>
-              </select>
-            </div>
-          )}
-
-          <button type="submit" className="btn btn-primary btn-block" style={{ marginTop: '1rem' }} disabled={loading}>
-            {isLogin ? (
-              <>
-                <LogIn size={18} />
-                {loading ? 'Logging in...' : 'Sign In'}
-              </>
-            ) : (
-              <>
-                <UserPlus size={18} />
-                {loading ? 'Registering...' : 'Sign Up'}
-              </>
-            )}
+          <button type="submit" className="btn btn-primary btn-block" disabled={loading}>
+            {isLogin ? <LogIn size={18} aria-hidden="true" /> : <UserPlus size={18} aria-hidden="true" />}
+            {loading ? (isLogin ? 'Signing in…' : 'Creating account…') : (isLogin ? 'Sign in' : 'Create account')}
           </button>
         </form>
 
         <div className="auth-switch">
           {isLogin ? (
             <>
-              Don't have an account? 
-              <span onClick={() => { setIsLogin(false); setError(''); }}>Register</span>
+              Don&apos;t have an account?{' '}
+              <button type="button" className="text-link" onClick={() => switchMode(false)}>
+                Register
+              </button>
             </>
           ) : (
             <>
-              Already have an account? 
-              <span onClick={() => { setIsLogin(true); setError(''); }}>Sign In</span>
+              Already have an account?{' '}
+              <button type="button" className="text-link" onClick={() => switchMode(true)}>
+                Sign in
+              </button>
             </>
           )}
         </div>
